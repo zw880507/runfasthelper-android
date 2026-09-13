@@ -24,6 +24,7 @@ public final class LiveAnalyzerRuntime implements AutoCloseable {
     private final AdvisorWorker advisor=new AdvisorWorker(); private final AuditLogger audit;
     private GameTracker tracker; private LiveEventDecoder decoder; private String lastAdviceKey; private long roundEndAtNs; private int roundNumber; private int resultFrames;
     private Phase phase=Phase.INITIALIZING;
+    private long frameSeq; private String lastHandDebug="-"; private String lastTableDebug="-"; private String advisorDebug="idle";
 
     public LiveAnalyzerRuntime(Context c,TemplateBank handBank,TemplateBank tableBank,AppSettings settings,OverlayController overlay,Listener listener) throws Exception {
         this.settings=settings;this.overlay=overlay;this.listener=listener;this.initial=new HandRecognizer(handBank);this.current=new HandRecognizer(handBank);this.table=new TableActionRecognizer(tableBank,.55);this.audit=new AuditLogger(c,settings.keepAudit);
@@ -33,11 +34,16 @@ public final class LiveAnalyzerRuntime implements AutoCloseable {
     public synchronized void onFrame(Mat frame,double ts){
         if(frame==null||frame.empty())return;
         try{
-            StableFrameGate.Result stab=gate.update(frame); UIStateClassifier.Observation uio=ui.classify(frame);String uiName=name(uio.state);
+            frameSeq++; StableFrameGate.Result stab=gate.update(frame); UIStateClassifier.Observation uio=ui.classify(frame);String uiName=name(uio.state);
+            if(frameSeq%6==0){
+                try{HandRecognizer.Observation hh=current.recognizeCurrent(frame);lastHandDebug=handDebug(hh);}catch(Throwable ignored){}
+                if(tracker!=null&&stab.stable){try{TableActionRecognizer.Observation rr=table.recognizeZone(frame,"remote"),ll=table.recognizeZone(frame,"local");lastTableDebug=tableDebug(rr)+" / "+tableDebug(ll);}catch(Throwable ignored){}}
+            }
+            publishDebug(frame,stab,uio,uiName);
             if(phase==Phase.ROUND_END){if(System.nanoTime()-roundEndAtNs>1_500_000_000L && (uio.state==UIStateClassifier.State.TABLE||uio.state==UIStateClassifier.State.MY_TURN)){resetForNextRound();}else return;}
             if(tracker==null){
                 if(!settings.autoDetect||!stab.stable)return;
-                HandRecognizer.Observation h=initial.recognizeInitial16(frame);if(h==null||h.count!=16||h.meanConfidence<.70)return;
+                HandRecognizer.Observation h=initial.recognizeInitial16(frame);lastHandDebug=handDebug(h);publishDebug(frame,stab,uio,uiName);if(h==null||h.count!=16||h.meanConfidence<.70)return;
                 int first=settings.firstPlayer>=0?settings.firstPlayer:(uio.state==UIStateClassifier.State.MY_TURN?0:1);
                 startRound(h.cards,first,h.meanConfidence); return;
             }
@@ -51,7 +57,7 @@ public final class LiveAnalyzerRuntime implements AutoCloseable {
                     }
                 }catch(Exception ex){decoder.rejectEvent(e);audit.log("REJECT P"+e.player+" "+e.action+" src="+e.source+" err="+ex.getMessage());}
             }
-            if(changed){advisor.cancelPending();lastAdviceKey=null;}
+            if(changed){advisor.cancelPending();lastAdviceKey=null;advisorDebug="idle";}
             GameTracker.State st=tracker.state(); if(st.winner!=null){finishRound(st);return;}
             if(uio.state==UIStateClassifier.State.RESULT || uio.state==UIStateClassifier.State.MODAL){resultFrames++; if(resultFrames>=8){quarantineRound("result_without_tracker_winner"); return;}} else resultFrames=0;
             updateOverlay(st,uiName); maybeAdvise(st,uiName);
@@ -59,18 +65,35 @@ public final class LiveAnalyzerRuntime implements AutoCloseable {
     }
 
     private void startRound(String hand,int first,double conf){roundNumber++;resultFrames=0;tracker=new GameTracker(hand,16,first);final GameTracker[] holder={tracker};decoder=new LiveEventDecoder(current,table,s->RuleEngine.classify(s)!=null,s->remoteEarlyOk(holder[0],s),s->localFollowupImpliesRemotePass(holder[0],s));decoder.reset(hand);lastAdviceKey=null;advisor.cancelPending();transition(Phase.TRACKING,"R"+roundNumber+" 已识别 16 张 · first=P"+first);audit.log("ROUND_START R"+roundNumber+" hand="+hand+" conf="+fmt(conf)+" first=P"+first);overlay.status("已识别 16 张","等待出牌 · R"+roundNumber);}
-    private void finishRound(GameTracker.State st){advisor.cancelPending();lastAdviceKey=null;audit.log("ROUND_END R"+roundNumber+" winner=P"+st.winner+" left="+Arrays.toString(st.cardsLeft));roundEndAtNs=System.nanoTime();transition(Phase.ROUND_END,"R"+roundNumber+" 结束 · winner=P"+st.winner);overlay.status("本局结束","winner=P"+st.winner+" · 等待下一局");}
+    private void finishRound(GameTracker.State st){advisor.cancelPending();lastAdviceKey=null;advisorDebug="idle";audit.log("ROUND_END R"+roundNumber+" winner=P"+st.winner+" left="+Arrays.toString(st.cardsLeft));roundEndAtNs=System.nanoTime();transition(Phase.ROUND_END,"R"+roundNumber+" 结束 · winner=P"+st.winner);overlay.status("本局结束","winner=P"+st.winner+" · 等待下一局");}
     private void resetForNextRound(){tracker=null;decoder=null;lastAdviceKey=null;resultFrames=0;gate.reset();transition(Phase.WAITING_FOR_GAME,"等待下一局");overlay.status("识别中","等待新牌局");}
 
 
-    private void quarantineRound(String reason){advisor.cancelPending();lastAdviceKey=null;audit.log("ROUND_QUARANTINE R"+roundNumber+" reason="+reason);roundEndAtNs=System.nanoTime();transition(Phase.ROUND_END,"R"+roundNumber+" 未闭环，已隔离并等待下一局");overlay.status("本局未闭环","已隔离，不影响下一局");}
+    private void quarantineRound(String reason){advisor.cancelPending();lastAdviceKey=null;advisorDebug="idle";audit.log("ROUND_QUARANTINE R"+roundNumber+" reason="+reason);roundEndAtNs=System.nanoTime();transition(Phase.ROUND_END,"R"+roundNumber+" 未闭环，已隔离并等待下一局");overlay.status("本局未闭环","已隔离，不影响下一局");}
     private void maybeAdvise(GameTracker.State st,String uiName){
         if(!settings.advisorEnabled||st.currentPlayer!=0||!"my_turn".equals(uiName))return;String key=stateKey(st);if(key.equals(lastAdviceKey))return;lastAdviceKey=key;
-        RuleEngine.Play target=st.currentTarget;int first=tracker.history().isEmpty()?st.currentPlayer:tracker.history().get(0).player;AdvisorWorker.Snapshot snap=new AdvisorWorker.Snapshot(st.ownHand,st.cardsLeft[1],target,st.targetOwner,st.currentPlayer,first,key,new ArrayList<>(tracker.history()));overlay.status("计算中","你:"+st.cardsLeft[0]+" 对手:"+st.cardsLeft[1]);
-        advisor.submit(snap,settings.searchBudgetMs,settings.topK,r->{synchronized(LiveAnalyzerRuntime.this){if(tracker==null)return;GameTracker.State now=tracker.state();if(!r.stateKey.equals(stateKey(now))||now.currentPlayer!=0){audit.log("ADVICE_STALE key="+r.stateKey);return;}String text=formatAdvice(r);audit.log("ADVICE key="+r.stateKey+" "+text.replace('\n',' '));overlay.advice(now.currentTarget==null?null:now.currentTarget.cards,String.valueOf(now.cardsLeft[0]),now.cardsLeft[1],text);}});
+        RuleEngine.Play target=st.currentTarget;int first=tracker.history().isEmpty()?st.currentPlayer:tracker.history().get(0).player;advisorDebug="searching";publishDebug(null,null,null,uiName);
+        AdvisorWorker.Snapshot snap=new AdvisorWorker.Snapshot(st.ownHand,st.cardsLeft[1],target,st.targetOwner,st.currentPlayer,first,key,new ArrayList<>(tracker.history()));overlay.status("计算中","你:"+st.cardsLeft[0]+" 对手:"+st.cardsLeft[1]);
+        advisor.submit(snap,settings.searchBudgetMs,settings.topK,r->{synchronized(LiveAnalyzerRuntime.this){if(tracker==null)return;GameTracker.State now=tracker.state();if(!r.stateKey.equals(stateKey(now))||now.currentPlayer!=0){audit.log("ADVICE_STALE key="+r.stateKey);return;}advisorDebug="ready "+r.elapsedMs+"ms/"+r.iterations+"it/"+r.reservoir+"w";String text=formatAdvice(r);audit.log("ADVICE key="+r.stateKey+" "+text.replace('\n',' '));overlay.advice(now.currentTarget==null?null:now.currentTarget.cards,String.valueOf(now.cardsLeft[0]),now.cardsLeft[1],text);}});
     }
     private void updateOverlay(GameTracker.State st,String uiName){if(st.currentPlayer==0){if(!"my_turn".equals(uiName))overlay.status("等待界面稳定","你:"+st.cardsLeft[0]+" 对手:"+st.cardsLeft[1]);}else overlay.status("对手回合","你:"+st.cardsLeft[0]+" · 对手:"+st.cardsLeft[1]);}
     private String formatAdvice(AdvisorWorker.Result r){if(r.top.isEmpty())return "暂无合法建议";StringBuilder b=new StringBuilder();for(int i=0;i<r.top.size();i++){AdvisorWorker.Candidate c=r.top.get(i);b.append(i==0?"★ ":(i+1)+". ").append(c.action).append("  score=").append((int)Math.round(c.score*100)).append("%  n=").append(c.visits);if(i+1<r.top.size())b.append('\n');}b.append("\n").append(r.elapsedMs).append("ms · iter=").append(r.iterations).append(" · worlds=").append(r.reservoir);return b.toString();}
+
+    private void publishDebug(Mat frame,StableFrameGate.Result stab,UIStateClassifier.Observation uio,String uiName){
+        StringBuilder b=new StringBuilder();
+        b.append("phase=").append(phase).append("  frame=").append(frameSeq);
+        if(frame!=null)b.append("  canon=").append(frame.cols()).append("x").append(frame.rows());
+        if(stab!=null)b.append("\nstable=").append(stab.stable).append(" diff=").append(fmt(stab.meanDifference)).append(" n=").append(stab.consecutiveStable);
+        if(uio!=null)b.append("\nui=").append(uiName).append(" my=").append(fmt(uio.myTurnScore)).append(" modal=").append(fmt(uio.modalScore)).append(" result=").append(fmt(uio.resultScore));
+        b.append("\nhand=").append(lastHandDebug);
+        if(tracker==null)b.append("\ntracker=NO  waiting initial16");
+        else{GameTracker.State st=tracker.state();b.append("\ntracker=YES  left=").append(st.cardsLeft[0]).append('/').append(st.cardsLeft[1]).append(" turn=P").append(st.currentPlayer);b.append("\ntarget=").append(st.currentTarget==null?"FREE":st.currentTarget.cards).append(" owner=").append(st.targetOwner==null?"-":"P"+st.targetOwner);b.append("\ntable=").append(lastTableDebug);}
+        b.append("\nadvisor=").append(advisorDebug);
+        overlay.debug(b.toString());
+    }
+    private static String handDebug(HandRecognizer.Observation h){if(h==null)return "none";return h.count+"["+h.cards+"] c="+fmt(h.meanConfidence)+" d="+fmt(h.meanDistance);}
+    private static String tableDebug(TableActionRecognizer.Observation o){if(o==null)return "-";return o.zone+":"+(o.cards==null?"-":o.cards)+" c="+fmt(o.confidence)+" g="+o.glyphs+" "+o.reason;}
+
     private static boolean remoteEarlyOk(GameTracker t,String action){if(t==null||t.state().currentPlayer!=1)return false;RuleEngine.Play p=RuleEngine.classify(action);if(p==null)return false;RuleEngine.Play target=t.state().currentTarget;if(target!=null){Integer c=RuleEngine.compare(p,target);if(c==null||c!=1)return false;}if(p.length()==t.state().cardsLeft[1])return true;return RuleEngine.legalResponses(t.state().ownHand,p).isEmpty();}
     private static boolean localFollowupImpliesRemotePass(GameTracker t,String action){if(t==null||t.state().currentPlayer!=1||t.state().targetOwner==null||t.state().targetOwner!=0||t.state().currentTarget==null)return false;RuleEngine.Play p=RuleEngine.classify(action);if(p==null)return false;Integer c=RuleEngine.compare(p,t.state().currentTarget);return c==null||c!=1;}
     private static String stateKey(GameTracker.State s){return s.ownHand+"|"+Arrays.toString(s.cardsLeft)+"|"+(s.currentTarget==null?"-":s.currentTarget.cards)+"|"+s.currentPlayer;}
