@@ -1,0 +1,250 @@
+{
+  "1": {
+    "initial_hand": "AAKQQJ9998876554",
+    "first_player": 1,
+    "events": [
+      {
+        "player": 1,
+        "action": "T987654"
+      },
+      {
+        "player": 0,
+        "action": "PASS"
+      },
+      {
+        "player": 1,
+        "action": "5"
+      },
+      {
+        "player": 0,
+        "action": "K"
+      },
+      {
+        "player": 1,
+        "action": "2"
+      },
+      {
+        "player": 0,
+        "action": "PASS"
+      },
+      {
+        "player": 1,
+        "action": "7"
+      },
+      {
+        "player": 0,
+        "action": "J"
+      },
+      {
+        "player": 1,
+        "action": "K"
+      },
+      {
+        "player": 0,
+        "action": "A"
+      },
+      {
+        "player": 1,
+        "action": "3333"
+      },
+      {
+        "player": 0,
+        "action": "PASS"
+      },
+      {
+        "player": 1,
+        "action": "Q"
+      }
+    ],
+    "expected_winner": 1,
+    "expected_final_cards": [
+      13,
+      0
+    ]
+  },
+  "2": {
+    "initial_hand": "2AQJTTT886644333",
+    "first_player": 1,
+    "events": [
+      {
+        "player": 1,
+        "action": "44"
+      },
+      {
+        "player": 0,
+        "action": "66"
+      },
+      {
+        "player": 1,
+        "action": "99"
+      },
+      {
+        "player": 0,
+        "action": "TT"
+      },
+      {
+        "player": 1,
+        "action": "KK"
+      },
+      {
+        "player": 0,
+        "action": "PASS"
+      },
+      {
+        "player": 1,
+        "action": "7"
+      },
+      {
+        "player": 0,
+        "action": "A"
+      },
+      {
+        "player": 1,
+        "action": "5555"
+      },
+      {
+        "player": 0,
+        "action": "PASS"
+      },
+      {
+        "player": 1,
+        "action": "AKQJT"
+      }
+    ],
+    "expected_winner": 1,
+    "expected_final_cards": [
+      11,
+      0
+    ]
+  },
+  "3": {
+    "initial_hand": "JJJT998876654433",
+    "first_player": 1,
+    "events": [
+      {
+        "player": 1,
+        "action": "77743"
+      },
+      {
+        "player": 0,
+        "action": "JJJ75"
+      },
+      {
+        "player": 1,
+        "action": "PASS"
+      },
+      {
+        "player": 0,
+        "action": "4433"
+      },
+      {
+        "player": 1,
+        "action": "AAKK"
+      },
+      {
+        "player": 0,
+        "action": "PASS"
+      },
+      {
+        "player": 1,
+        "action": "8"
+      },
+      {
+        "player": 0,
+        "action": "T"
+      },
+      {
+        "player": 1,
+        "action": "J"
+      },
+      {
+        "player": 0,
+        "action": "PASS"
+      },
+      {
+        "player": 1,
+        "action": "55"
+      },
+      {
+        "player": 0,
+        "action": "66"
+      },
+      {
+        "player": 1,
+        "action": "TT"
+      },
+      {
+        "player": 0,
+        "action": "PASS"
+      },
+      {
+        "player": 1,
+        "action": "2"
+      }
+    ],
+    "expected_winner": 1,
+    "expected_final_cards": [
+      4,
+      0
+    ]
+  },
+  "4": {
+    "initial_hand": "AKQQTTT987654433",
+    "first_player": 1,
+    "events": [
+      {
+        "player": 1,
+        "action": "99"
+      },
+      {
+        "player": 0,
+        "action": "QQ"
+      },
+      {
+        "player": 1,
+        "action": "KK"
+      },
+      {
+        "player": 0,
+        "action": "PASS"
+      },
+      {
+        "player": 1,
+        "action": "66653"
+      },
+      {
+        "player": 0,
+        "action": "TTT43"
+      },
+      {
+        "player": 1,
+        "action": "PASS"
+      },
+      {
+        "player": 0,
+        "action": "9876543"
+      },
+      {
+        "player": 1,
+        "action": "PASS"
+      },
+      {
+        "player": 0,
+        "action": "A"
+      },
+      {
+        "player": 1,
+        "action": "PASS"
+      },
+      {
+        "player": 0,
+        "action": "K"
+      }
+    ],
+    "expected_winner": 0,
+    "expected_final_cards": [
+      0,
+      7
+    ]
+  }
+}

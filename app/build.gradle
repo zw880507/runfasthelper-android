@@ -1,0 +1,33 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.paodekuai.analyzer'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId 'com.paodekuai.analyzer'
+        minSdk 26
+        targetSdk 36
+        versionCode 9
+        versionName '0.9.0-live-source'
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'org.opencv:opencv:4.13.0'
+    testImplementation 'junit:junit:4.13.2'
+}
